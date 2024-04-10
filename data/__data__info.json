@@ -1,0 +1,37 @@
+{
+    "Admins": [
+        {
+            "Name": "Alexandre Barros",
+            "E-mail": "alexand7e@gmail.com"
+        },
+        {
+            "Name": "Chistiano Filho",
+            "E-mail": "christiannofilo@gmail.com"
+        },
+        {
+            "Name": "Gustavo Carvalho",
+            "E-mail": "g_car@ufpi.edu.br"
+        }
+    ],
+    "Knowledge base": "https://docs.google.com/spreadsheets/d/1ghxTewM8Zm8U-sMnn_Z8tJh0TUzLUiBgXWqNoj2WCzM/edit?usp=sharing",
+    "MainFolder": {
+        "Name": "Base de Dados - Piauí",
+        "ID": "1NQZfQe8rx-JEKdMa0TksnG6Dqa3YgngR",
+        "URL": "https://drive.google.com/drive/folders/1NQZfQe8rx-JEKdMa0TksnG6Dqa3YgngR",
+        "Subfolders": [
+            {
+                "Name": "",
+                "ID": "",
+                "URL": "",
+                "Spreadsheets": [
+                    {
+                        "Name": "",
+                        "ID": "",
+                        "URL": "",
+                        "Sheets": [{"Index": "", "Name": ""}]
+                    }
+                ]
+            }
+        ]
+    }
+}
