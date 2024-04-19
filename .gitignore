@@ -2,3 +2,4 @@ docs/*
 logs/*
 plugins/*
 data/processed/*
+data/formatted/*

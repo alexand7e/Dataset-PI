@@ -1,6 +1,10 @@
 {
     "Admins": [
         {
+            "Name": "Service account",
+            "E-mail": "grupo-de-pesquisa-piau@linen-lens-348420.iam.gserviceaccount.com"
+        },
+        {
             "Name": "Alexandre Barros",
             "E-mail": "alexand7e@gmail.com"
         },

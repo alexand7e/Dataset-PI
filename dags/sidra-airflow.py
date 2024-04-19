@@ -94,14 +94,16 @@ def task_configure_drive_repository(**kwargs):
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
-    'start_date': datetime(2024, 4, 7),
+    'start_date': datetime(2024, 4, 11),
     'email_on_failure': False,
     'email_on_retry': False,
-    'retries': 1,
+    'retries': 2,
     'retry_delay': timedelta(minutes=2),
 }
 
-with DAG("sidra-pi-update-dag", schedule_interval='0 0 1 * *', default_args=default_args) as dag:
+with DAG("sidra-pi-update-dag", 
+         schedule_interval='0 0 1 * *', 
+         default_args=default_args) as dag:
     
     t1 = PythonOperator(
         task_id='configure_paths',

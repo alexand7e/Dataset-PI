@@ -11,8 +11,8 @@ print(data_path)
 sys.path.append(current_path)
 
 from operadores import GoogleSheetManager, GoogleDriveManager
-from estruturas import DataManager
-from sidrapi import Sidra_Data
+from estruturas import InformationManager
+from sidrapi import SidraManager
 
 def configure_paths():
     """
@@ -30,8 +30,8 @@ def configure_managers(credentials_path, information_path, knowledge_path):
     """
     sheet_manager = GoogleSheetManager(credentials_path)
     drive_manager = GoogleDriveManager(credentials_path, information_path)
-    json_manager = DataManager(information_path)
-    sidra_manager = Sidra_Data()
+    json_manager = InformationManager(information_path)
+    sidra_manager = SidraManager()
     
     return [sheet_manager, drive_manager, json_manager, sidra_manager]
 
@@ -77,6 +77,9 @@ def get_sidra_api_info(sheet_manager, sidra_manager, knowledge_path):
 
 
 def configure_initial_sheet(table_number, **kwargs):
+    """
+    A documentar
+    """
     ti = kwargs["ti"]
 
     tabela, variaveis, categorias = ti.xcom_pull(task_ids="id_da_tarefa_aqui")
@@ -145,13 +148,6 @@ def configure_drive_repository(drive_manager, sheet_manager, json_manager, infor
     """
     Configura o repositório no Google Drive, criando uma pasta principal e subpastas conforme necessário.
     Atualiza o arquivo JSON com informações das pastas e compartilha com usuários administradores.
-    
-    :param drive_manager: Instância de GoogleDriveManager para operações no Drive.
-    :param sheet_manager: Instância de GoogleSheetManager para operações em Sheets.
-    :param json_manager: Instância responsável pela manipulação de arquivos JSON.
-    :param information_path: Caminho para o arquivo de informações (JSON).
-    :param knowledge_path: URL da base de conhecimento no Google Sheets.
-    :param info_data: Dicionário com informações gerais, incluindo administradores.
     """
 
     admins = [
@@ -174,7 +170,7 @@ def configure_drive_repository(drive_manager, sheet_manager, json_manager, infor
     folder_id, folder_url = drive_manager.create_folder(folder_name)
 
 
-    json_manager = DataManager(information_path)
+    json_manager = InformationManager(information_path)
     json_manager.create_json(admins = admins, 
                              knowledge_base = knowledge_path,
                              folder_name = folder_name,
@@ -222,13 +218,6 @@ def configure_drive_repository(drive_manager, sheet_manager, json_manager, infor
 def read_and_populate_spreadsheets(sheet_manager, drive_manager, json_manager, information_path, df_tabelas, df_variaveis):
     """
     Lê a lista de planilhas do arquivo JSON 'data_info' e popula com os dados do DataFrame.
-
-    :param sheet_manager: Instância de GoogleSheetManager para operações em Sheets.
-    :param drive_manager: Instância de GoogleDriveManager para operações no Drive.
-    :param json_manager: Instância responsável pela manipulação de arquivos JSON.
-    :param information_path: Caminho para o arquivo de informações (JSON).
-    :param df_tabelas: DataFrame com informações ajustadas das tabelas.
-    :param df_variaveis: DataFrame com informações ajustadas das variáveis.
     """
     # Carrega o arquivo JSON
     with open(information_path, 'r') as file:
@@ -246,42 +235,3 @@ def read_and_populate_spreadsheets(sheet_manager, drive_manager, json_manager, i
                 if result['table_number'] == spreadsheet_num:
                     worksheet = sheet_manager.add_worksheet(spreadsheet_url, result['page_name'])
                     sheet_manager.insert_data_to_worksheet(worksheet, result['page_data'])
-
-
-
-# class DataManager:
-#     def __init__(self):
-#         self.current_path = os.path.abspath(os.path.dirname(__file__))
-#         self.data_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data'))
-#         sys.path.append(self.current_path)
-        
-#         # Configuração inicial
-#         self.credentials_path, self.information_path, self.knowledge_path = self.configure_paths()
-#         self.sheet_manager, self.drive_manager, self.json_manager, self.sidra_manager = self.configure_managers()
-
-#     def configure_paths(self):
-#         credentials_path = os.path.join(self.data_path, 'credentials.json')
-#         information_path = os.path.join(self.data_path, '__data__info.json')
-#         knowledge_path = "https://docs.google.com/spreadsheets/d/1ghxTewM8Zm8U-sMnn_Z8tJh0TUzLUiBgXWqNoj2WCzM/edit?usp=sharing"
-#         return credentials_path, information_path, knowledge_path
-
-#     def configure_managers(self):
-#         sheet_manager = GoogleSheetManager(self.credentials_path)
-#         drive_manager = GoogleDriveManager(self.credentials_path, self.information_path)
-#         json_manager = DataManager (self.knowledge_path)
-#         sidra_manager = Sidra_Data()
-#         return sheet_manager, drive_manager, json_manager, sidra_manager
-
-#     def get_sidra_api_info(self):
-#         df_information = self.sheet_manager.get_data_info_from_url(self.knowledge_path, 0)
-#         df_tabelas, df_variaveis, df_categorias = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-
-#         for idx, row in df_information.iterrows():
-#             table_number = row["Número da Tabela"]
-#             content_api, df_table = self.sidra_manager.sidra_info(table_number)
-#             df_variables, df_groups = self.sidra_manager.sidra_get_vars(content_api)
-
-#             # Processamento e concatenação dos DataFrames
-#             # (código omitido por brevidade, mas segue a lógica fornecida anteriormente)
-
-#         return df_tabelas, df_variaveis, df_categorias

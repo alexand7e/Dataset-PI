@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 
 sys.path.append(os.path.dirname(__file__))
 
@@ -29,6 +30,19 @@ class GoogleDriveManager:
         creds = Credentials.from_service_account_file(self.credentials_path, scopes=scopes)
         self.drive_service = build('drive', 'v3', credentials=creds)
         self.sheets_service = gspread.authorize(creds)
+
+    def get_file_info_by_url(self, url):
+        """Obtém o ID e outras informações do arquivo ou pasta a partir da URL do Google Drive."""
+        # Extrai o ID do arquivo ou pasta da URL
+        match = re.search(r'(folders|d)/([a-zA-Z0-9-_]+)', url)
+        if not match:
+            raise ValueError("URL inválida, não foi possível extrair o ID.")
+        
+        item_id = match.group(2)
+
+        # Usa o serviço do Drive para obter informações sobre o arquivo ou pasta
+        item_info = self.drive_service.files().get(fileId=item_id, fields='id, name, mimeType, parents').execute()
+        return item_info
 
     def create_folder(self, folder_name, parent_folder_id=None, make_public=False):
         """
@@ -135,21 +149,17 @@ class GoogleDriveManager:
     
         self.drive_service.files().delete(fileId=file_id).execute()
 
-    def list_all_contents(self, folder_id=None):
-        """Lista todos os conteúdos de uma pasta específica ou do diretório raiz, se nenhum ID de pasta for fornecido.
-        Argumento:
-        folder_id -- ID opcional da pasta cujo conteúdo será listado (padrão é o diretório raiz)."""
-
+    def list_all_contents(self, folder_id=None, return_as='json'):
+        """Lista todos os conteúdos de uma pasta específica ou do diretório raiz, em formato JSON ou DataFrame."""
         contents = self._list_folder_contents(folder_id)
-        return json.dumps(contents, indent=4)
+        if return_as == 'json':
+            return json.dumps(contents, indent=4)
+        elif return_as == 'dataframe':
+            return pd.json_normalize(contents, sep='_')
+        
 
     def _list_folder_contents(self, folder_id):
-        """Método auxiliar para listar os conteúdos de uma pasta no Google Drive.
-        Argumento:
-        folder_id -- ID da pasta cujo conteúdo será listado."""
-
         query = f"'{folder_id}' in parents" if folder_id else "trashed = false and 'root' in parents"
-
         items = self.drive_service.files().list(q=query, fields="files(id, name, mimeType)").execute().get('files', [])
 
         contents = []
@@ -160,6 +170,7 @@ class GoogleDriveManager:
                 'type': 'folder' if item['mimeType'] == 'application/vnd.google-apps.folder' else 'file'
             }
 
+            # Adicionando recursividade para listar conteúdos das subpastas
             if item_info['type'] == 'folder':
                 item_info['contents'] = self._list_folder_contents(item['id'])
 
@@ -167,7 +178,27 @@ class GoogleDriveManager:
 
         return contents
 
+    def _list_folder_contents_(self, folder_id):
+        query = f"'{folder_id}' in parents and trashed = false"
+        items = self.drive_service.files().list(q=query, fields="files(id, name, mimeType)").execute().get('files', [])
+        return items
 
+    def list_all_files(self, folder_id='root'):
+        files_list = []
+        items = self._list_folder_contents_(folder_id)
+
+        for item in items:
+            if item['mimeType'] != 'application/vnd.google-apps.folder':
+                files_list.append({
+                    'id': item['id'],
+                    'name': item['name'],
+                    'type': 'file'
+                })
+            else:
+                sub_folder_files = self.list_all_files(item['id'])
+                files_list.extend(sub_folder_files)  # Recursividade para adicionar arquivos de subpastas
+
+        return files_list
 
 class GoogleSheetManager:
 

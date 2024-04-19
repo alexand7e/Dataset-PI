@@ -48,7 +48,7 @@ fsspec==2024.2.0
 grpcio==1.60.0
 grpcio-status==1.60.0
 gspread==5.12.4
-gspread-dataframe==3.3.1
+gspread-dataframe==3.3.1 
 gunicorn==21.2.0
 h11==0.9.0
 h2==3.2.0
@@ -56,7 +56,7 @@ hpack==3.0.0
 hstspreload==2023.1.1
 httpcore==0.9.1
 httplib2==0.22.0
-# httpx==0.13.3 #0.23.0
+# httpx#==0.13.3 #0.23.0
 hyperframe==5.2.0
 idna==2.10
 imageio-ffmpeg==0.4.9
