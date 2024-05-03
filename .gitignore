@@ -3,3 +3,5 @@ logs/*
 plugins/*
 data/processed/*
 data/formatted/*
+data/image/*
+data/credentials.json
