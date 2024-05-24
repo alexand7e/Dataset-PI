@@ -4,6 +4,9 @@ import numpy as np
 import time
 import locale
 
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+
 import requests
 from requests.exceptions import (HTTPError, 
                                  ConnectionError, 
@@ -108,9 +111,7 @@ class SidraManager:
         try:
             df_classificacoes = pd.DataFrame(dados['classificacoes'])
             all_categories = []
-            unique_categories = []
             for classification in dados['classificacoes']:
-                unique_categories.append(f"c{classification['id']}/all/")
 
                 for categoria in classification['categorias']:
                     categoria['classificacao_nome'] = classification['nome']
@@ -120,139 +121,69 @@ class SidraManager:
 
             df_categorias = pd.DataFrame(all_categories)
 
-            return df_categorias, unique_categories
+            return df_categorias
+        
         except Exception as e:
             print(f"Erro ao processar dados combinados: {e}")
             return pd.DataFrame()
 
-    # def fetch_sidra_data(self, t, v, c, n, p, f='f/n', d='d/4', h='h/y') -> pd.DataFrame:
-    #     """
-    #     Parâmetros: 
-    #     * t/ – para especificar o código da tabela de onde se deseja extrair os dados.
-    #     * p/ – para especificar os períodos (meses, anos etc.) desejados.
-    #     * v/ – para especificar as variáveis desejadas.
-    #     * n<nível territorial> – para especificar os níveis territoriais e suas unidades territoriais desejadas.
-    #     * c<classificação> – para especificar as classificações da tabela e suas categorias desejadas.
-    #     * f – para especificar a formatação do resultado, i.e., que tipo de descritor de cada uma das dimensões da tabela comporá o resultado recebido.
-    #     * d – para especificar com quantas casas decimais serão formatados os valores.
-    #     * h – para especificar se o resultado recebido será precedido por um registro de cabeçalho (header) (n/y)
-    #     """
-    #     def get_n(n: str):
-    #         parts = []
-
-    #         if "N1" in n:
-    #             parts.append('n1/1')
-    #         if "N2" in n:
-    #             parts.append('n2/all')
-    #         if "N3" in n:
-    #             parts.append('n3/22')
-            
-    #         if parts:
-    #             return '/' + '/'.join(parts)
-    #         else:
-    #             return '/n1/1'
-            
-    #     def get_p(p: str):
-    #         if p == "Ano":
-    #             return '/p/2012-2024'
-    #         elif p == "Mês":
-    #             return '/p/201201-202403'    
-    #         else:
-    #             return '/p/201201-202401'
-
-    #     n_adjust = get_n(n=n)
-    #     p_adjust = get_p(p=p)
-
-    #     url_base = 'https://apisidra.ibge.gov.br/values'
-
-    #     url = f"{url_base}/t/{t}/{n_adjust}/v/{v}/{p_adjust}/{c}/all/{f}/{d}/{h}"
-
-    #     if pd.isna(c) or c == "" or c is None:
-    #         url = f"{url_base}/t/{t}/{n_adjust}/v/{v}/{p_adjust}/{f}/{d}/{h}"
-
-    #     try:
-    #         print(f"Requesting {url}...")
-    #         response = requests.get(url)
-    #         response.raise_for_status()
-    #         data = response.json()
-    #         df = pd.DataFrame(data)
-    #         df.columns = df.iloc[0]
-    #         df = df[1:]
-
-    #         # Identify columns containing "(Code)" in the name
-    #         columns_to_remove = [column for column in df.columns if "(Código)" in column]
-    #         df = df.drop(columns=columns_to_remove)
-
-    #         df['Valor'] = pd.to_numeric(df['Valor'], errors='coerce')
-    #         locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')  # Set to your locale
-    #         df['Valor'] = df['Valor'].apply(lambda x: locale.format_string('%.2f', x, grouping=True))
-
-    #         return df    
-    #     except HTTPError as http_err:
-    #         print(f"HTTP error occurred: {http_err}")
-    #     except ConnectionError as conn_err:
-    #         print(f"Connection error occurred: {conn_err}")
-    #     except Timeout as timeout_err:
-    #         print(f"Request timed out: {timeout_err}")
-    #     except TooManyRedirects as redirects_err:
-    #         print(f"Too many redirects: {redirects_err}")
-    #     except Exception as e:
-    #         print(f"An unexpected error occurred: {e}")
-    #         return pd.DataFrame()
-
 
 class SidraAPI:
     def __init__(self):
+        self.get_p = GeradorDePeriodos()
         print('objeto criado')
 
-    # def _get_n(self):
-    #     parts = []
-    #     if "N1" in self.n:
-    #         parts.append('n1/1')
-    #     if "N2" in self.n:
-    #         parts.append('n2/all')
-    #     if "N3" in self.n:
-    #         parts.append('n3/22')
-
-    #     return '/' + '/'.join(parts) if parts else '/n1/1'
-
     def _get_n(self):
-        parts = self.n.split(", ")  # Separa os elementos baseados na vírgula e espaço
-        parts = [f"{part}/all" for part in parts]
+        n_map = {
+            "N1": "N1/1",
+            "N2": "N2/2",
+            "N3": "N3/22",
+            "N6": "N6/2200053,2211704"
+        }
 
-        # Une todas as partes com '/'
-        return parts # '/' + '/'.join(parts)
+        parts = self.n.split(", ")
+        parts_ajuste = [n_map[part] for part in parts if part in n_map]
+
+        return parts_ajuste
   
-    def _get_p(self):
-        if self.p == "Ano":
-            return '/p/2012-2024'
-        elif self.p == "Mês":
-            return '/p/201201-202403'
-        else:
-            return '/p/201201-202401'
+    # def _get_p(self):
+    #     if self.p == "anual":
+    #         return '/p/2012-2024'
+    #     elif self.p == "mensal":
+    #         return '/p/201201-202403'
+    #     elif self.p == "trimestral":
+    #         return '/p/201201-202401'
     
-    def build_url(self, t, v, c, n, p, f='f/n', d='d/4', h='h/y'):
-        self.t = t
-        self.v = v
-        self.c = c
-        self.n = n
-        self.p = p
-        self.f = f
-        self.d = d
-        self.h = h
+    def build_url(self, tabela: str, variavel: str, classificacao: str = None, nivel_territorial: str = None, periodo: dict = {'Frequência': None, 'Inicio': None, 'Final': None}, formato: str ='f/n', decimais: str='d/4', cabeçalho: str='h/y', api: str = None):
+        self.t = tabela
+        self.v = variavel
+        self.c = classificacao
+        self.n = nivel_territorial
+        self.p = periodo 
+        self.f = formato
+        self.d = decimais
+        self.h = cabeçalho
 
         n_adjust_list = self._get_n()
-        p_adjust = self._get_p()
+        p_adjust_list = self.get_p.obter_periodo(
+            self.p.get('Frequência'),
+            self.p.get('Inicio'),
+            self.p.get('Final'),
+        )
+
         url_base = 'https://apisidra.ibge.gov.br/values'
         urls = []
 
-        for n_adjust in n_adjust_list:
-            if pd.isna(self.c) or self.c == "" or self.c is None:
-                url = f"{url_base}/t/{self.t}/{n_adjust}/v/{self.v}/{p_adjust}/{self.f}/{self.d}/{self.h}"
-            else:
-                url = f"{url_base}/t/{self.t}/{n_adjust}/v/{self.v}/{p_adjust}/{self.c}/{self.f}/{self.d}/{self.h}"
-            urls.append(url)
-
+        if not api:
+            for n_adjust in n_adjust_list:
+                for p_adjust in p_adjust_list:  # Adicionado loop para iterar sobre cada período em p_adjust_list
+                    if pd.isna(self.c) or self.c == "" or self.c is None:
+                        url = f"{url_base}/t/{self.t}/{n_adjust}/v/{self.v}/{p_adjust}/{self.f}/{self.d}/{self.h}"
+                    else:
+                        url = f"{url_base}/t/{self.t}/{n_adjust}/v/{self.v}/{p_adjust}/{self.c}/{self.f}/{self.d}/{self.h}"
+                    urls.append(url)
+        else:
+            urls.append(api)
         self.urls = urls
     
     def generate_periods(self, start_year, end_year, frequency):
@@ -268,40 +199,108 @@ class SidraAPI:
                     periods.append(f"{year}{month:02d}")
         return periods
     
-    def fetch_data(self):
-        results = []  # Lista para armazenar os resultados de cada requisição
+    def fetch_data(self, timeout=30, max_retries=2):
+        results = []
+        print(f'Processando a tabela {self.t} | Variável {self.v} | Total de urls: {len(self.urls)}')
+
         for url in self.urls:
-            try:
-                print(f"Requesting {url}...")
-                response = requests.get(url)
-                response.raise_for_status()
+            attempt = 0
+            while attempt < max_retries:
+                try:
+                    response = requests.get(url, timeout=timeout)
+                    response.raise_for_status()
+                    response_df = self.format_data(response.json())
+                    results.append(response_df)
+                    break  # Se a requisição foi bem-sucedida, sai do loop de tentativas
 
-                response_df = pd.DataFrame(response.json())
-                response_df.columns = response_df.iloc[0]
-                results.append(response_df)
-            except (HTTPError, ConnectionError, Timeout, TooManyRedirects) as e:
-                print(f"Erro ao obter dados de {url}: {e}")
-            except Exception as e:
-                print(f"Erro inesperado ao obter dados de {url}: {e}")
+                except (HTTPError, ConnectionError, Timeout, TooManyRedirects) as e:
+                    print(f"Attempt {attempt + 1}: Error fetching data from {url}: {e}")
+                    attempt += 1
+                    time.sleep(5)  # Espera 5 segundos antes de tentar novamente
+                except Exception as e:
+                    print(f"Unexpected error fetching data from {url}: {e}")
+                    break
 
-        return results
+        if results:
+            final_df = pd.concat(results, ignore_index=True)
+        else:
+            final_df = pd.DataFrame()
 
-class DataFrameFormatter:
-    @staticmethod
-    def format_data(data):
+        return final_df
+    
+    def format_data(self, data):
         if not data:
             return pd.DataFrame()
         
         df = pd.DataFrame(data)
+        rename_map = {
+        'Grande Região': 'Região',
+        'Município': 'Região',
+        'Unidade da Federação': 'Região',
+        'Brasil': 'Região',
+        'Ano': 'Período',
+        'Trimestre': 'Período',
+        'Mês': 'Período'
+        }
+
         df.columns = df.iloc[0]
+        df = df.rename(columns=rename_map)
         df = df[1:]
         columns_to_remove = [column for column in df.columns if "(Código)" in column]
         df = df.drop(columns=columns_to_remove)
         df['Valor'] = pd.to_numeric(df['Valor'], errors='coerce')
         locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')  # Adjust locale as needed
         df['Valor'] = df['Valor'].apply(lambda x: locale.format_string('%.2f', x, grouping=True))
+        
+        if df.columns[-1] != 'Categorias':
+            df.columns = [*df.columns[:-1], 'Categorias']
+
         return df
-           
+
+class GeradorDePeriodos:
+    def __init__(self):
+        self.duracao_dos_periodos = {
+            'anual': 5 * 12,        # 5 anos por período, cada ano 12 meses
+            'mensal': 36,           # 36 meses por período
+            'trimestral': 12 * 3    # 12 trimestres por período, cada trimestre 3 meses
+        }
+
+    def analisar_data(self, data_str):
+        if self.periodicidade == 'anual':
+            return datetime.strptime(data_str[:4], '%Y')
+        elif self.periodicidade == 'mensal' or self.periodicidade == 'trimestral':
+            return datetime.strptime(data_str, '%Y%m')
+
+    def formatar_data(self, data):
+        if self.periodicidade == 'anual':
+            return data.strftime('%Y')
+        elif self.periodicidade == 'trimestral' or self.periodicidade == 'mensal':
+            return data.strftime('%Y%m')
+
+    def obter_periodo(self, periodicidade, inicio, fim):
+        self.periodicidade = periodicidade
+        data_inicio = self.analisar_data(inicio)
+        data_fim = self.analisar_data(fim)
+
+        periodos = []
+        inicio_atual = data_inicio
+
+        while inicio_atual < data_fim:
+            meses_a_adicionar = self.duracao_dos_periodos[self.periodicidade]
+            fim_atual = inicio_atual + relativedelta(months=meses_a_adicionar) - relativedelta(days=1)
+            
+            if self.periodicidade == 'trimestral':
+                # Ajustar para o final do trimestre
+                while fim_atual.month > 4:
+                    fim_atual += relativedelta(months=1)
+
+            if fim_atual >= data_fim:
+                fim_atual = data_fim
+
+            periodos.append(f'/p/{self.formatar_data(inicio_atual)}-{self.formatar_data(fim_atual)}')
+            inicio_atual = fim_atual + relativedelta(days=1)
+
+        return periodos      
 class old_sidra_manager():
     def __init__(self) -> None:
         pass

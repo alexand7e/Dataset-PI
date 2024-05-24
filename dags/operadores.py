@@ -10,17 +10,14 @@ from gspread_dataframe import set_with_dataframe
 from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials
 
-from estruturas import *
-
 class GoogleDriveManager:
-    def __init__(self, credentials_path: str, information_path: str) -> None:
+    def __init__(self, credentials_path: str) -> None:
         """Inicializa a instância da classe GoogleDriveManager com os caminhos para as credenciais e informações."""
 
         self.credentials_path = credentials_path
         self.drive_service = None
         self.sheets_service = None
 
-        self.INFORMATION_PATH = information_path
         self._authenticate()
 
     def _authenticate(self):
@@ -46,29 +43,87 @@ class GoogleDriveManager:
 
     def create_folder(self, folder_name, parent_folder_id=None, make_public=False):
         """
-        Cria uma nova pasta no Google Drive.
+        Cria uma nova pasta no Google Drive se ela não existir.
+        Retorna o ID da pasta existente se ela já existir.
         Argumentos:
         folder_name -- Nome da nova pasta.
         parent_folder_id -- ID opcional da pasta pai onde a nova pasta será criada.
-        make_public -- Torna a pasta pública pela URL."""
-        
-        folder_metadata = {
-            'name': folder_name,
-            'mimeType': 'application/vnd.google-apps.folder'
-        }
-        # Se um ID de pasta pai for fornecido, cria a nova pasta dentro dela
+        make_public -- Torna a pasta pública pela URL.
+        """
+        # Verificar se a pasta já existe
+        query = f"name = '{folder_name}'"
         if parent_folder_id:
-            folder_metadata['parents'] = [parent_folder_id]
+            query += f" and '{parent_folder_id}' in parents"
 
-        folder = self.drive_service.files().create(body=folder_metadata, fields='id').execute()
-        folder_id = folder.get('id')
+        results = self.drive_service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+        folders = results.get('files', [])
 
-        if make_public:
-            self._make_public(folder_id)
+        if folders:
+            # Pasta já existe
+            folder_id = folders[0]['id']
+        else:
+            # Pasta não existe, então cria uma nova
+            folder_metadata = {
+                'name': folder_name,
+                'mimeType': 'application/vnd.google-apps.folder'
+            }
+            if parent_folder_id:
+                folder_metadata['parents'] = [parent_folder_id]
+
+            folder = self.drive_service.files().create(body=folder_metadata, fields='id').execute()
+            folder_id = folder.get('id')
+
+            if make_public:
+                self._make_public(folder_id)
 
         folder_url = f"https://drive.google.com/drive/folders/{folder_id}"
         return folder_id, folder_url
 
+
+    def upload_file(self, file_path, parent_folder_id=None, make_public=False):
+        """
+        Faz o upload de um arquivo para o Google Drive.
+        Argumentos:
+        file_path -- Caminho completo para o arquivo local que será carregado.
+        parent_folder_id -- ID opcional da pasta no Google Drive onde o arquivo será carregado.
+        make_public -- Se verdadeiro, torna o arquivo público pela URL.
+        """
+        from googleapiclient.http import MediaFileUpload
+
+        file_metadata = {
+            'name': os.path.basename(file_path),
+            'mimeType': self._get_mime_type(file_path)
+        }
+        if parent_folder_id:
+            file_metadata['parents'] = [parent_folder_id]
+
+        media = MediaFileUpload(file_path, mimetype=file_metadata['mimeType'])
+        file = self.drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        file_id = file.get('id')
+
+        if make_public:
+            self._make_public(file_id)
+
+        file_url = f"https://drive.google.com/file/d/{file_id}/view"
+        return file_id, file_url
+
+    def _get_mime_type(self, file_path):
+        """
+        Retorna o MIME type de um arquivo com base na sua extensão.
+        """
+        import mimetypes
+        mime_type, _ = mimetypes.guess_type(file_path)
+        return mime_type
+
+    def _make_public(self, file_id):
+        """
+        Torna o arquivo público no Google Drive.
+        """
+        permission = {
+            'type': 'anyone',
+            'role': 'reader'
+        }
+        self.drive_service.permissions().create(fileId=file_id, body=permission).execute()
 
     def create_spreadsheet(self, spreadsheet_name):
         """Cria uma nova planilha no Google Sheets.

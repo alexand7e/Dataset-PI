@@ -1,143 +1,308 @@
 import os
+import shutil
 
-data_path = os.path.join(os.path.dirname(__file__), "..", "data")
-
-from sidrapi import SidraAPI, SidraManager, DataFrameFormatter
+from sidrapi import SidraAPI, SidraManager
+from configure_directory import DirectoryManager
+from postgres import PostgreSQL
+from operadores import GoogleDriveManager
 
 import pandas as pd
-import json
 from tqdm import tqdm
-from time import sleep
+from time import sleep, time
+import re
+import unicodedata
+from typing import List, Tuple
+import json
+import logging
+
 
 # Configuração das pastas de destino
-output_dirs = {
-    'gold': f'{data_path}/gold',
-    'silver': f'{data_path}/silver',
-    'bronze': f'{data_path}/bronze'
-}
-
-
-def bath_info(tables_list: list, sidra_service: SidraManager):
-    """"""
-    lista_df_tabelas = pd.DataFrame()
-    lista_df_variaveis = pd.DataFrame()
-    lista_df_categorias = pd.DataFrame()
-
-    for tabela in tqdm(tables_list, total=len(tables_list), unit="Tabelas"):
-        dados = sidra_service.sidra_get_metadata(tabela)
-        sleep(1)
-        if dados:
-            df_tabelas = sidra_service.sidra_process_table(dados)[1] # primeiro elemento da tupla
-            df_variaveis = sidra_service.sidra_process_variables(dados, tabela)
-            df_categorias = sidra_service.sidra_process_categories(dados, tabela)
-
-            # Adicionando os DataFrames às respectivas listas
-            lista_df_tabelas = pd.concat([lista_df_tabelas, df_tabelas], ignore_index=True)
-            lista_df_variaveis = pd.concat([lista_df_variaveis, df_variaveis], ignore_index=True)    # lista_df_variaveis.append(df_variaveis)
-            lista_df_categorias = pd.concat([lista_df_categorias, df_categorias], ignore_index=True)    # lista_df_categorias.append(df_categorias)
-
-        else:
-            print(f"Falha ao obter dados de {tabela}")
-
-    lista_df_tabelas.to_excel(f"{output_dirs['bronze']}/tabelas_ajustadas.xlsx", index=False)
-    lista_df_variaveis.to_excel(f"{output_dirs['bronze']}/variaveis_ajustadas.xlsx", index=False)
-    lista_df_categorias.to_excel(f"{output_dirs['bronze']}/categorias_ajustadas.xlsx", index=False)
-    sidra_service.retry_failed_requests()    
-
-
-def batch_extraction(df_tabelas, df_variaveis, sidra_api: SidraAPI, sidra_service: SidraManager):
-
-    for idx, row in df_tabelas.iterrows():
-        table_number = row[sidra_service.TAB_COLUMN_NAME]
-        tb_var = df_variaveis[df_variaveis[sidra_service.TAB_COLUMN_NAME] == table_number]
-
-        # dados paras os arquivos excel
-        pages_data = []
-        pages_names = []
-
-        for i, row_var in tb_var.iterrows():
-            try:
-                sidra_api_execute = sidra_api(t=table_number,
-                                                v=row_var[sidra_service.VAR_COLUMN_CODE],
-                                                c=row[sidra_service.CLASS_COLUMN_NAME],
-                                                n=row[sidra_service.SPATIAL_COLUMN_NAME],
-                                                p=row[sidra_service.PERIOD_COLUMN_NAME])
-                df = sidra_api_execute.fetch_data()
-                # print(df.head(3))
-                if df is not None:
-                    pages_data.append(df)
-                    nome_aba = f'Variável {row_var[sidra_service.VAR_COLUMN_CODE]}'
-                    pages_names.append(nome_aba)
-                else:
-                    print(f"Nenhum dado retornado para {table_number}, na variável {row_var[sidra_service.VAR_COLUMN_CODE]}")
-                sleep(1.02)
-
-            except Exception as e:
-                print(f"An error occurred for table number {table_number}: {e}")
-                sleep(10)
-                continue
-
-        # Save DataFrames as different tabs in an Excel file
-        if pages_data:
-            with pd.ExcelWriter(f'{output_dirs.get("silver")}\\Tabela {table_number}.xlsx', engine='openpyxl') as writer:
-                for df, nome_aba in zip(pages_data, pages_names):
-                    df.to_excel(writer, sheet_name=nome_aba, index=False)
-        else:
-            print(f"Nenhum dado retornado para escrever em Excel")
-
-
-def individual_table_interaction(table_number: int):
-    sidra_service = SidraManager() 
-    sidra_api = SidraAPI()
-
-    metadata = sidra_service.sidra_get_metadata(table_number)
-    tabela = sidra_service.sidra_process_table(metadata)[0]
-    variaveis = sidra_service.sidra_process_variables(metadata, table_number)
-    categorias = sidra_service.sidra_process_categories(metadata, table_number)
-
-    pages_data = []
-    pages_names = []
-
-    for idx, var in variaveis.iterrows():
-
-        try:
-            sidra_api.build_url(t=table_number,
-                                v=var['id'],
-                                c=''.join(categorias[1]),
-                                n=tabela.loc[0, 'Nível Territorial'],
-                                p=tabela.loc[0, 'Frequência'])
-            
-            response = sidra_api.fetch_data()
-            df = pd.DataFrame(response)
-            df.columns = df.iloc[0]
-
-            if df is not None:
-                pages_names.append(f"Variável {var['id']}")
-                pages_data.append(df)
-            sleep(1.02)
-            
-        except Exception as e:
-
-            print(f"Erro ao obter dados: {table_number}: {e}")
-            sleep(10)
-            continue
-
-    if pages_data:
-        with pd.ExcelWriter(f'{output_dirs.get("silver")}\\Tabela {table_number}.xlsx', engine='openpyxl') as writer:
-            for tab, nome_aba in zip(pages_data, pages_names):
-                tab.to_excel(writer, sheet_name=nome_aba, index=False)
+class DatasetPi:
+    def __init__(self, 
+                 list_of_tables: list = None,
+                 output_dir: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")) -> None:
     
-    return pages_data
+        self.output_dirs = {
+            'geral': output_dir,
+            'gold': f'{output_dir}\\gold',
+            'silver': f'{output_dir}\\silver',
+            'bronze': f'{output_dir}\\bronze'
+        }
+
+        self.sidra_service = SidraManager()
+        self.sidra_api = SidraAPI()
+        self.db = PostgreSQL(schema='datasetpi')
+
+        self.list_of_tables = list_of_tables
+        self.output_dir = output_dir
+        self.gd = GoogleDriveManager(os.path.join(output_dir, 'credentials.json'))
+
+        self.main_folder_id, self.url_banco = self.gd.create_folder('Banco de Dados de Emprego - Piauí', make_public=True)
+        print(f'banco de dados criado em {self.url_banco}')
+
+        self.execution_interval = 1
+        logging.basicConfig(level=logging.INFO)
+        
+
+    def batch_info(self, max_retries=3):
+        list_df_tables = []
+        list_df_variables = []
+        list_df_categories = []
+
+        metatable = []
+        failed_requests = {}
+        create = True
+
+        for table in tqdm(self.list_of_tables, total=len(self.list_of_tables), unit="Tables"):
+            retry_count = 0
+
+            while retry_count <= max_retries:
+                start_time = time()  # Tempo de início do loop
+
+                try:
+                    data = self.sidra_service.sidra_get_metadata(table)
+                    sleep(self.execution_interval)
+                    
+                    if data:
+                        df_tables, df_table_info = self.sidra_service.sidra_process_table(data)
+                        df_variables = self.sidra_service.sidra_process_variables(data, table)
+                        df_categories = self.sidra_service.sidra_process_categories(data, table)
+
+                        list_df_tables.append(df_tables)
+                        list_df_variables.append(df_variables)
+                        list_df_categories.append(df_categories)
+
+                        metatable.append({"table": table, "data": df_table_info})
+                        df_table_info.to_excel(f"{self.output_dirs['bronze']}/sidra_info_{table}.xlsx", index=False)
+
+                        if create:
+                            self.db.set_schema('datasetpi')
+                            self.db.create_table(table_name='sidra_tabelas', df=df_tables)
+                            self.db.create_table(table_name='sidra_variaveis', df=df_variables)
+                            self.db.create_table(table_name='sidra_categorias', df=df_categories)
+                        create = False
+
+                        self.db.insert_into_table(table_name='sidra_tabelas', df=df_tables)
+                        self.db.insert_into_table(table_name='sidra_variaveis', df=df_variables)
+                        self.db.insert_into_table(table_name='sidra_categorias', df=df_categories)
+
+                        break  # Sai do loop de retry ao sucesso
+                    else:
+                        logging.error(f"Falha ao obter os dados de {table}")
+                        retry_count += 1
+                except Exception as e:
+                    logging.error(f"Erro ao processar os dados de {table}: {e}")
+                    retry_count += 1
+
+                elapsed_time = time() - start_time
+                if elapsed_time > 120:  # Verifica se o tempo excedeu 2 minutos
+                    logging.error(f"Tempo limite excedido para a tabela {table}")
+                    break
+
+            if retry_count > max_retries:
+                logging.error(f"Todas as tentativas falharam para a tabela {table}")
+                failed_requests[table] = retry_count
+
+        # Concatenação e gravação dos dataframes
+        final_df_tables = pd.concat(list_df_tables, ignore_index=True)
+        final_df_variables = pd.concat(list_df_variables, ignore_index=True)
+        final_df_categories = pd.concat(list_df_categories, ignore_index=True)
+
+        final_df_tables.to_excel(f"{self.output_dirs['bronze']}/tables_adjusted.xlsx", index=False)
+        final_df_variables.to_excel(f"{self.output_dirs['bronze']}/variables_adjusted.xlsx", index=False)
+        final_df_categories.to_excel(f"{self.output_dirs['bronze']}/categories_adjusted.xlsx", index=False)
+
+        return metatable, failed_requests
 
 
+    def batch_extraction(self):
+
+        df_tables = pd.read_excel(f"{self.output_dirs['bronze']}/tables_adjusted.xlsx", dtype=str)
+        df_variables = pd.read_excel(f"{self.output_dirs['bronze']}/variables_adjusted.xlsx", dtype=str)
+        df_categories = pd.read_excel(f"{self.output_dirs['bronze']}/categories_adjusted.xlsx", dtype=str)
+
+        assuntos = ['Trabalho', 'Domicílios', 'Mercado de trabalho', 'Rendimento', 'População desocupada', 'Pessoal ocupado', 'Características do trabalho e apoio social', 'Rendimento de todas as fontes']
+        df_filtrado = df_tables[df_tables['assunto'].isin(assuntos)]
+        print(f'total de tabelas: {len(df_filtrado)}')
+        for idx, row in df_filtrado.iterrows():
+            table_number = row["id"]
+            variaveis_filtradas = df_variables[df_variables["Tabela"] == table_number]
+
+            pages_data: List[pd.DataFrame] = []
+            pages_names: List[str] = []
+
+            unique_categories = df_categories[df_categories["Tabela"] == table_number]['classificacao_id'].unique().tolist()
+            unique_categories = [f'c{category}' for category in unique_categories if category is not None and category != '']
+            categories_str = '/all/'.join(unique_categories) + '/all/' if unique_categories else ''
+            assunto = self.format_string(row['assunto'])
+
+            for _, row_var in variaveis_filtradas.iterrows():
+                try:
+                    self.sidra_api.build_url(
+                        tabela=table_number,
+                        variavel=row_var['id'],
+                        classificacao=categories_str,
+                        nivel_territorial=row["Nível Territorial"],
+                        periodo={'Frequência': row["Frequência"], 
+                                 'Inicio': row["Data Inicial"], 
+                                 'Final': row["Data Final"]}
+                    )
+
+                    df = self.sidra_api.fetch_data()
+                    self.process_dataframe(df, table_number, row_var, assunto)
+
+                    pages_data.append(df)
+                    pages_names.append(f'Variável {row_var["id"]}')
+
+                    sleep(self.execution_interval)
+
+                except Exception as e:
+                    print(f"Um erro ocorreu na tabela {table_number}, variável {row_var['id']}: {e}")
+                    sleep(10)
+
+            if pages_data:
+                with pd.ExcelWriter(f'{self.output_dirs.get("silver")}/Tabela {table_number}.xlsx', engine='openpyxl') as writer:
+                    for df, nome_aba in zip(pages_data, pages_names):
+                        df.to_excel(writer, sheet_name=nome_aba, index=False)
+            else:
+                print(f"Nenhum dado para escrever em Excel: {table_number}")
+
+    def process_dataframe(self, df, table_number, row_var, assunto):
+        if df is not None:
+            df_banco = df.copy()
+            df_banco.columns = [self.format_string(col) for col in df_banco.columns]
+            self.db.set_schema(assunto)
+            self.db.create_table(df=df_banco, table_name=f'tabela_{table_number}_var_{row_var["id"]}', adjust_dataframe=False)
+        else:
+            print(f"Nenhum dado retornado para tabela {table_number}, variável {row_var['id']}")
+
+    def processed_template(self):
+        try:
+            dm = DirectoryManager(self.output_dirs['bronze'], self.output_dirs['gold'])
+            file_list_df = dm._list_files()
+            file_list_df['filename'] = file_list_df['filename'].astype(str)
+            file_list_df['table_number'] = file_list_df['filename'].str.extract('(\d+)').astype(str)
+            file_list_df = file_list_df[file_list_df['table_number'].str.isdigit()]
+
+            template = f"{self.output_dirs.get('geral')}/template.xlsx"
+
+            for _, file_info in file_list_df.iterrows():
+                try:
+                    data_df = pd.read_excel(file_info['full_filename'])
+                    table_number = file_info['table_number']
+                    output_path = f"{self.output_dirs['silver']}\\Tabela {table_number}.xlsx"
+
+                    if os.path.exists(output_path):
+                        dm.process_template(data_df, template, output_path, table_number)
+                        logging.info(f"Tabela processada: {table_number}.")
+                        
+                except Exception as e:
+                    logging.error(f"Erro ao processar a tabela {table_number}: {e}")
+
+        except Exception as e:
+            logging.error(f"Failed to process data files: {e}")
+
+    def format_string(self, input_string):
+        normalized_string = unicodedata.normalize('NFKD', input_string)
+        cleaned_string = ''.join(char for char in normalized_string if not unicodedata.combining(char))
+        
+        cleaned_string = re.sub(r'[^a-zA-Z0-9\s]', '', cleaned_string)
+        cleaned_string = cleaned_string.lower()
+        cleaned_string = cleaned_string.replace(' ', '_').replace('-', '_')
+        return cleaned_string
+    
+    def process_data(self):
+        dm = DirectoryManager(self.output_dirs.get('gold'), None)
+        df = dm._list_files()
+        df['filename'] = df['filename'].astype(str)
+        df['tabela'] = df['filename'].str.extract('(\d+)').astype(str)
+        df = df[df['tabela'].str.isdigit()]
+
+        df_tables = self.db.read_table_columns('sidra_tabelas', columns=['*'], return_type='dataframe')
+        df_tables['id'] = df_tables['id'].astype(str)
+
+        df_final = df.merge(df_tables, left_on='tabela', right_on='id', how='inner')
+        df_final = df_final[['tabela', 'filename', 'full_filename', 'assunto']]
+
+        df_final['gdrive_id'], df_final['url'] = zip(*df_final.apply(self.upload_to_drive, axis=1))
+        df_final['download'] = df_final['gdrive_id'].apply(lambda x: f"https://drive.google.com/uc?export=download&id={x}")
+
+        self.db.set_schema('datasetpi')
+        self.db.create_table('sidra_url_banco', df_final)
+
+        print(df_final)
+
+    def upload_to_drive(self, row):
+        folder_id, _ = self.gd.create_folder(row['assunto'], parent_folder_id=self.main_folder_id)
+        file_id, file_url = self.gd.upload_file(row['full_filename'], parent_folder_id=folder_id)
+        return file_id, file_url
 
 
 if __name__ == "__main__": 
 
-    # with open(f'{data_path}/preset-tables.json', 'r') as json_file:
-    #     data = json.load(json_file)
+    output_dir: str = os.path.join(os.path.dirname(__file__), "..", "data")
+    with open(f'{output_dir}/preset-tables.json', 'r', encoding='utf-8-sig') as json_file:
+        data = json.load(json_file)
 
-    # table_numbers = [item['tabela'] for item in data]
+    tabelas = [item['tabela'] for item in data]
+
+    executor = DatasetPi(tabelas)
+    # metatable, failed = executor.batch_info()
+    # executor.batch_extraction()
+    executor.processed_template()
+    executor.process_data()
+
+    # if failed:
+    #     executor = DatasetPi(failed)
+    #     metatable, _ = executor.batch_info()
+    #     executor.batch_extraction()
+    #     executor.processed_template(metatable)
+
+
+
+
+
+
+
+# def individual_table_interaction(table_number: int):
+#     sidra_service = SidraManager() 
+#     sidra_api = SidraAPI()
+
+#     metadata = sidra_service.sidra_get_metadata(table_number)
+#     tabela = sidra_service.sidra_process_table(metadata)[0]
+#     variaveis = sidra_service.sidra_process_variables(metadata, table_number)
+#     categorias = sidra_service.sidra_process_categories(metadata, table_number)
+
+#     pages_data = []
+#     pages_names = []
+
+#     for idx, var in variaveis.iterrows():
+
+#         try:
+#             sidra_api.build_url(t=table_number,
+#                                 v=var['id'],
+#                                 c=''.join(categorias[1]),
+#                                 n=tabela.loc[0, 'Nível Territorial'],
+#                                 p=tabela.loc[0, 'Frequência'])
+            
+#             response = sidra_api.fetch_data()
+#             df = pd.DataFrame(response)
+#             df.columns = df.iloc[0]
+
+#             if df is not None:
+#                 pages_names.append(f"Variável {var['id']}")
+#                 pages_data.append(df)
+#             sleep(1.02)
+            
+#         except Exception as e:
+
+#             print(f"Erro ao obter dados: {table_number}: {e}")
+#             sleep(10)
+#             continue
+
+#     if pages_data:
+#         with pd.ExcelWriter(f'{output_dirs.get("silver")}\\Tabela {table_number}.xlsx', engine='openpyxl') as writer:
+#             for tab, nome_aba in zip(pages_data, pages_names):
+#                 tab.to_excel(writer, sheet_name=nome_aba, index=False)
     
-    df = individual_table_interaction(109)
-    print(df)
+#     return pages_data
