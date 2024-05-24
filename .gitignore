@@ -9,3 +9,4 @@ data/credentials.json
 data/gold/*
 data/silver/*
 data/bronze/*
+data/bi/*
