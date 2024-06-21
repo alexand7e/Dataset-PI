@@ -154,6 +154,47 @@ class PostgreSQL:
                 print(f"Erro ao inserir dados na tabela: {e}")
         else:
             print(f"A tabela '{table_name}' não existe.")
+                
+                
+    def upsert_table_data(self, table_name: str, df: pd.DataFrame, adjust_dataframe: bool = False) -> None:
+        if adjust_dataframe:
+            df.columns = [self.format_string(col) for col in df.columns]
+
+        if self.table_exists(table_name):
+            try:
+                cursor = self.connector.cursor()
+                colunas = sql.SQL(', ').join([sql.Identifier(c) for c in df.columns])
+                placeholders = sql.SQL(', ').join(sql.Placeholder() * len(df.columns))
+                key_column = 'tabela'  # Adjust as necessary to match your key column name
+
+                # SQL para UPSERT
+                upsert_query = sql.SQL("""
+                    INSERT INTO {table} ({columns})
+                    VALUES ({values})
+                    ON CONFLICT ({key_column})
+                    DO UPDATE SET
+                    {assignments}
+                """).format(
+                    table=sql.Identifier(self.schema, table_name),
+                    columns=colunas,
+                    values=placeholders,
+                    key_column=sql.Identifier(key_column),
+                    assignments=sql.SQL(', ').join([
+                        sql.SQL("{column} = EXCLUDED.{column}").format(column=sql.Identifier(c))
+                        for c in df.columns if c != key_column
+                    ])
+                )
+
+                # Executa upsert para cada linha
+                for row in df.itertuples(index=False):
+                    valores = tuple(row)
+                    cursor.execute(upsert_query, valores)
+                self.connector.commit()
+                cursor.close()
+            except Exception as e:
+                print(f"Erro ao inserir/atualizar dados na tabela '{table_name}': {e}")
+        else:
+            print(f"A tabela '{table_name}' não existe.")
 
 
     def read_table_columns(self, table_name: str, columns: list, return_type: str = "list") -> list:

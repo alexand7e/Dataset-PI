@@ -1,32 +1,34 @@
-import os
-import shutil
-
-from sidrapi import SidraAPI, SidraManager
-from configure_directory import DirectoryManager
-from postgres import PostgreSQL
-from operadores import GoogleDriveManager
-
-import pandas as pd
-from tqdm import tqdm
-from time import sleep, time
-import re
-import unicodedata
-from typing import List, Tuple
+# Standard library imports
 import json
 import logging
+import os
+import re
+import unicodedata
+from time import sleep, time
+from typing import List, Tuple
 
+# Third-party imports
+import pandas as pd
+from tqdm import tqdm
+
+# Local application/library specific imports
+from dags.local_directory import DirectoryManager
+from dags.remote_directory import GoogleDriveManager
+from sidrapi import SidraAPI, SidraManager
+from postgres import PostgreSQL
 
 # Configuração das pastas de destino
 class DatasetPi:
     def __init__(self, 
                  list_of_tables: list = None,
-                 output_dir: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")) -> None:
+                 output_dir: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data"),
+                 create_remote_directory: bool = False) -> None:
     
         self.output_dirs = {
             'geral': output_dir,
-            'gold': f'{output_dir}\\gold',
-            'silver': f'{output_dir}\\silver',
-            'bronze': f'{output_dir}\\bronze'
+            'gold': os.path.join( output_dir , 'gold' ),
+            'silver': os.path.join( output_dir , 'silver' ),
+            'bronze': os.path.join( output_dir , 'bronze' )
         }
 
         self.sidra_service = SidraManager()
@@ -37,94 +39,20 @@ class DatasetPi:
         self.output_dir = output_dir
         self.gd = GoogleDriveManager(os.path.join(output_dir, 'credentials.json'))
 
-        self.main_folder_id, self.url_banco = self.gd.create_folder('Banco de Dados de Emprego - Piauí', make_public=True)
-        print(f'banco de dados criado em {self.url_banco}')
+        if create_remote_directory:
+            self.main_folder_id, self.url_banco = self.gd.create_folder('Banco de Dados de Emprego - Piauí', make_public=True)
+            print(f'banco de dados criado em {self.url_banco}')
 
         self.execution_interval = 1
         logging.basicConfig(level=logging.INFO)
         
-
-    def batch_info(self, max_retries=3):
-        list_df_tables = []
-        list_df_variables = []
-        list_df_categories = []
-
-        metatable = []
-        failed_requests = {}
-        create = True
-
-        for table in tqdm(self.list_of_tables, total=len(self.list_of_tables), unit="Tables"):
-            retry_count = 0
-
-            while retry_count <= max_retries:
-                start_time = time()  # Tempo de início do loop
-
-                try:
-                    data = self.sidra_service.sidra_get_metadata(table)
-                    sleep(self.execution_interval)
-                    
-                    if data:
-                        df_tables, df_table_info = self.sidra_service.sidra_process_table(data)
-                        df_variables = self.sidra_service.sidra_process_variables(data, table)
-                        df_categories = self.sidra_service.sidra_process_categories(data, table)
-
-                        list_df_tables.append(df_tables)
-                        list_df_variables.append(df_variables)
-                        list_df_categories.append(df_categories)
-
-                        metatable.append({"table": table, "data": df_table_info})
-                        df_table_info.to_excel(f"{self.output_dirs['bronze']}/sidra_info_{table}.xlsx", index=False)
-
-                        if create:
-                            self.db.set_schema('datasetpi')
-                            self.db.create_table(table_name='sidra_tabelas', df=df_tables)
-                            self.db.create_table(table_name='sidra_variaveis', df=df_variables)
-                            self.db.create_table(table_name='sidra_categorias', df=df_categories)
-                        create = False
-
-                        self.db.insert_into_table(table_name='sidra_tabelas', df=df_tables)
-                        self.db.insert_into_table(table_name='sidra_variaveis', df=df_variables)
-                        self.db.insert_into_table(table_name='sidra_categorias', df=df_categories)
-
-                        break  # Sai do loop de retry ao sucesso
-                    else:
-                        logging.error(f"Falha ao obter os dados de {table}")
-                        retry_count += 1
-                except Exception as e:
-                    logging.error(f"Erro ao processar os dados de {table}: {e}")
-                    retry_count += 1
-
-                elapsed_time = time() - start_time
-                if elapsed_time > 120:  # Verifica se o tempo excedeu 2 minutos
-                    logging.error(f"Tempo limite excedido para a tabela {table}")
-                    break
-
-            if retry_count > max_retries:
-                logging.error(f"Todas as tentativas falharam para a tabela {table}")
-                failed_requests[table] = retry_count
-
-        # Concatenação e gravação dos dataframes
-        final_df_tables = pd.concat(list_df_tables, ignore_index=True)
-        final_df_variables = pd.concat(list_df_variables, ignore_index=True)
-        final_df_categories = pd.concat(list_df_categories, ignore_index=True)
-
-        final_df_tables.to_excel(f"{self.output_dirs['bronze']}/tables_adjusted.xlsx", index=False)
-        final_df_variables.to_excel(f"{self.output_dirs['bronze']}/variables_adjusted.xlsx", index=False)
-        final_df_categories.to_excel(f"{self.output_dirs['bronze']}/categories_adjusted.xlsx", index=False)
-
-        return metatable, failed_requests
-
-
     def batch_extraction(self):
 
         df_tables = pd.read_excel(f"{self.output_dirs['bronze']}/tables_adjusted.xlsx", dtype=str)
         df_variables = pd.read_excel(f"{self.output_dirs['bronze']}/variables_adjusted.xlsx", dtype=str)
         df_categories = pd.read_excel(f"{self.output_dirs['bronze']}/categories_adjusted.xlsx", dtype=str)
 
-        assuntos = ['Trabalho', 'Domicílios', 'Mercado de trabalho', 'Rendimento', 'População desocupada', 'Pessoal ocupado', 'Características do trabalho e apoio social', 'Rendimento de todas as fontes']
-        df_filtrado = df_tables[df_tables['assunto'].isin(assuntos)]
-        print(f'total de tabelas: {len(df_filtrado)}')
-        for idx, row in df_filtrado.iterrows():
+        for idx, row in df_tables.iterrows():
             table_number = row["id"]
             variaveis_filtradas = df_variables[df_variables["Tabela"] == table_number]
 
@@ -193,7 +121,7 @@ class DatasetPi:
                     output_path = f"{self.output_dirs['silver']}\\Tabela {table_number}.xlsx"
 
                     if os.path.exists(output_path):
-                        dm.process_template(data_df, template, output_path, table_number)
+                        dm.process_template_file(data_df, template, output_path, table_number)
                         logging.info(f"Tabela processada: {table_number}.")
                         
                 except Exception as e:
@@ -236,6 +164,18 @@ class DatasetPi:
         folder_id, _ = self.gd.create_folder(row['assunto'], parent_folder_id=self.main_folder_id)
         file_id, file_url = self.gd.upload_file(row['full_filename'], parent_folder_id=folder_id)
         return file_id, file_url
+    
+    def configure_schemas_files(self):
+        schemas = ['trabalho', 'domicilios', 'mercado_de_trabalho', 'rendimento', 'populacao_desocupada', 'pessoal_ocupado', 'rendimento_de_todas_as_fontes', 'características_do_trabalho_e_apoio_social']
+
+        for schema in schemas:
+            db = PostgreSQL(schema=schema)
+            df = db.read_all_tables()
+            # Define o caminho onde o DataFrame será salvo
+            file_path = os.path.join(self.output_dir, f'{schema}_data.csv')
+            # Salva o DataFrame em um arquivo CSV
+            df.to_csv(file_path, index=False)
+            print(f'DataFrame do esquema {schema} salvo em {file_path}')
 
 
 if __name__ == "__main__": 
@@ -257,9 +197,6 @@ if __name__ == "__main__":
     #     metatable, _ = executor.batch_info()
     #     executor.batch_extraction()
     #     executor.processed_template(metatable)
-
-
-
 
 
 

@@ -21,6 +21,7 @@ class SidraManager:
     Documentação
     """
     def __init__(self, uf_code: int = 22) -> None:
+
         self.uf_ref = uf_code
         self.TABLE_INDEX = 0
         self.failed_requests = []  # Lista para armazenar tentativas falhas
@@ -145,16 +146,18 @@ class SidraAPI:
         parts_ajuste = [n_map[part] for part in parts if part in n_map]
 
         return parts_ajuste
-  
-    # def _get_p(self):
-    #     if self.p == "anual":
-    #         return '/p/2012-2024'
-    #     elif self.p == "mensal":
-    #         return '/p/201201-202403'
-    #     elif self.p == "trimestral":
-    #         return '/p/201201-202401'
     
-    def build_url(self, tabela: str, variavel: str, classificacao: str = None, nivel_territorial: str = None, periodo: dict = {'Frequência': None, 'Inicio': None, 'Final': None}, formato: str ='f/n', decimais: str='d/4', cabeçalho: str='h/y', api: str = None):
+    def build_url(self, 
+                  tabela: str, 
+                  variavel: str, 
+                  classificacao: str = None, 
+                  nivel_territorial: str = None, 
+                  periodo: dict = {'Frequência': None, 'Inicio': None, 'Final': None}, 
+                  formato: str ='f/n', 
+                  decimais: str='d/4', 
+                  cabeçalho: str='h/y', 
+                  api: str = None):
+        
         self.t = tabela
         self.v = variavel
         self.c = classificacao
@@ -185,19 +188,6 @@ class SidraAPI:
         else:
             urls.append(api)
         self.urls = urls
-    
-    def generate_periods(self, start_year, end_year, frequency):
-        periods = []
-        for year in range(start_year, end_year + 1):
-            if frequency == 'ano':
-                periods.append(f"{year}")
-            elif frequency == 'trimestre':
-                for quarter in range(1, 5):
-                    periods.append(f"{year}Q{quarter}")
-            elif frequency == 'mês':
-                for month in range(1, 13):
-                    periods.append(f"{year}{month:02d}")
-        return periods
     
     def fetch_data(self, timeout=30, max_retries=2):
         results = []
@@ -277,7 +267,10 @@ class GeradorDePeriodos:
         elif self.periodicidade == 'trimestral' or self.periodicidade == 'mensal':
             return data.strftime('%Y%m')
 
-    def obter_periodo(self, periodicidade, inicio, fim):
+    def obter_periodo(self, periodicidade, inicio, fim, last: bool = None):
+        if last:
+            return "p/last"
+        
         self.periodicidade = periodicidade
         data_inicio = self.analisar_data(inicio)
         data_fim = self.analisar_data(fim)
@@ -301,6 +294,8 @@ class GeradorDePeriodos:
             inicio_atual = fim_atual + relativedelta(days=1)
 
         return periodos      
+    
+    
 class old_sidra_manager():
     def __init__(self) -> None:
         pass
