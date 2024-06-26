@@ -1,19 +1,26 @@
+# Arquivos e diretórios do Airflow
 _airflow
-./dockerfile
-./docker-compose.yaml
 
-data/image
+# Arquivos do Docker
+dockerfile
+docker-compose.yaml
+
+# Dados sensíveis e outros arquivos na pasta data
 data/credentials.json
+data/image
 data/gold/*
 data/silver/*
 data/bronze/*
 data/bi
 
-src/__pycache__
+# Cache do Python
+src/__pycache__/
 
-
+# Arquivos de configuração e ambiente
 config
 .env
 .venv
+
+# Arquivos específicos do projeto
 README.pdf
-painel_dataset_piaui.pbix
+*.pbix
