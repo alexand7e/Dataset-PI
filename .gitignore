@@ -1,6 +1,6 @@
 _airflow
-dockerfile
-docker-compose.yaml
+./dockerfile
+./docker-compose.yaml
 
 data/image
 data/credentials.json
@@ -10,7 +10,7 @@ data/bronze/*
 data/bi
 
 src/__pycache__
-notebooks/__pycache__
+
 
 config
 .env
