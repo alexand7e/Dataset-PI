@@ -1,13 +1,27 @@
 import os
 import shutil
 import pandas as pd
-
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from copy import copy
 
 class DirectoryManager:
-    """A documentar"""
+    """Gerencia diretórios locais para organizar e processar arquivos.
+
+    Esta classe fornece métodos para criar diretórios, listar arquivos, 
+    organizar arquivos em subpastas e processar arquivos de template.
+
+    Args:
+        base_directory (str): O diretório base onde os diretórios "gold", "silver" e "bronze" serão criados. 
+            O padrão é um diretório "data" na raiz do projeto.
+        origin_directory (str): O diretório de origem dos arquivos a serem organizados.
+        destiny_directory (str): O diretório de destino onde os arquivos organizados serão armazenados.
+
+    Attributes:
+        base_directory (str): O diretório base onde os diretórios "gold", "silver" e "bronze" serão criados.
+        origin_directory (str): O diretório de origem dos arquivos a serem organizados.
+        destiny_directory (str): O diretório de destino onde os arquivos organizados serão armazenados.
+    """
     def __init__(self, 
                  base_directory: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data"), 
                  origin_directory: str = None, 
@@ -16,16 +30,45 @@ class DirectoryManager:
         self.base_directory = base_directory
         self.origin_directory = origin_directory
         self.destiny_directory = destiny_directory
-    
+
+    def _create_directories(self):
+        """Cria diretórios "gold", "silver" e "bronze" no diretório base se não existirem.
+
+        Returns:
+            dict: Um dicionário com os caminhos dos diretórios criados.
+        """
+        directories = {
+            'geral': self.base_directory,
+            'gold': os.path.join(self.base_directory, 'gold'),
+            'silver': os.path.join(self.base_directory, 'silver'),
+            'bronze': os.path.join(self.base_directory, 'bronze')
+        }
+
+        for path in directories.values():
+            os.makedirs(path, exist_ok=True)
+        
+        return directories
+
     def _list_files(self):
+        """Lista arquivos no diretório de origem.
+
+        Returns:
+            pandas.DataFrame: DataFrame contendo os nomes dos arquivos e seus caminhos completos.
+        """
         files = [f for f in os.listdir(self.origin_directory) if os.path.isfile(os.path.join(self.origin_directory, f))]
         full_filenames = [os.path.join(self.origin_directory, f) for f in files]
+        
         return pd.DataFrame({
             'filename': files,
             'full_filename': full_filenames
         })
-        
+
     def _organize_files(self, df):
+        """Organiza arquivos em subpastas com base nas informações do DataFrame.
+
+        Args:
+            df (pandas.DataFrame): DataFrame contendo informações dos arquivos e as subpastas de destino.
+        """
         for idx, row in df.iterrows():
             if 'pasta' in df.columns and 'subpasta' in df.columns:
                 folder_path = os.path.join(self.destiny_directory, row['pasta'], row['subpasta'])
@@ -34,8 +77,14 @@ class DirectoryManager:
                 new_path = os.path.join(folder_path, row['filename'])
                 if os.path.exists(file_path):
                     shutil.copy(file_path, new_path)  # Copiar em vez de mover
-    
+
     def execute_organize_files(self, df_folders):
+        """Executa a organização dos arquivos com base no DataFrame fornecido.
+
+        Args:
+            df_folders (pandas.DataFrame): DataFrame contendo as colunas 'tabela', 'pasta' e 'subpasta' 
+                para organizar os arquivos.
+        """
         df = self._list_files()
         df['tabela'] = df['filename'].str.extract('(\d+)')  # Extrai o número
         df['tabela'] = df['tabela'].astype(str)  # Converte para string
@@ -47,6 +96,14 @@ class DirectoryManager:
             self._organize_files(df)
 
     def process_template_file(self, df, template_path, existing_file_path, tabela):
+        """Processa arquivos de template e adiciona dados de um DataFrame.
+
+        Args:
+            df (pandas.DataFrame): DataFrame contendo os dados a serem adicionados ao template.
+            template_path (str): Caminho para o arquivo de template.
+            existing_file_path (str): Caminho para o arquivo existente onde os dados serão adicionados.
+            tabela (str): Nome da tabela para o arquivo de saída.
+        """
         template_wb = load_workbook(template_path)
         existing_wb = load_workbook(existing_file_path)
         
@@ -61,7 +118,6 @@ class DirectoryManager:
 
         for row_index, (index, row) in enumerate(df.iterrows(), start=1):
             for col_index, (key, value) in enumerate(row.items(), start=1):
-                # Definindo a célula na nova planilha e copiando o valor
                 new_cell = new_sheet.cell(row=row_index, column=col_index)
                 new_cell.value = value
 
@@ -74,35 +130,3 @@ class DirectoryManager:
                     new_cell.alignment = copy(template_cell.alignment)
 
         existing_wb.save(os.path.join(self.destiny_directory, f'Tabela {tabela}.xlsx'))
-
-
-    def configure_metadata_files(self):
-        control_files = {
-            'tables': os.path.join( self.base_directory , "bronze" , "_metadata_tables.xlsx" ),
-            'categories': os.path.join( self.base_directory , "bronze" , "_metadata_categories.xlsx" ),
-            'variables': os.path.join( self.base_directory , "bronze" , "_metadata_variables.xlsx" )
-        }
-
-        True
-
-
-# if __name__ == "__main__":
-
-#     output_dir: str = os.path.join(os.path.dirname(__file__), "..", "data", "gold")
-#     dm = DirectoryManager(output_dir, None)
-#     db = PostgreSQL(schema='datasetpi')
-    
-
-#     df = dm._list_files()
-
-#     df['tabela'] = df['filename'].str.extract('(\d+)')  
-#     df['tabela'] = df['tabela'].astype(str) 
-
-#     df_tables = db.read_table_columns('sidra_tabelas', columns=['*'], return_type='dataframe')
-#     df_tables['id'] = df_tables['id'].astype(str)
-
-#     df = df.merge(df_tables, left_on='tabela', right_on='id', how='inner') 
-#     df_final = df[['tabela', 'filename', 'full_filename', 'assunto']]
-
-#     print(df)
-#     # self._organize_files(df)
