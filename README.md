@@ -12,10 +12,11 @@ Alexandre Barros
 - `README.md`: Este arquivo README.
 - `README.pdf`: Versão PDF do README.
 - `data/`: Contém dados e arquivos relacionados.
+  - `bronze/*`
+  - `silver/*`
+  - `gold/*`
   - `__data__info.json`
-  - `credentials.json`
   - `preset-tables.json`
-  - `silver/Tabela 109.xlsx`
   - `template.xlsx`
 - `docker-compose.yaml`: Arquivo de configuração do Docker Compose.
 - `dockerfile`: Arquivo de configuração do Docker.
@@ -24,19 +25,20 @@ Alexandre Barros
   - `Sidra-Set_repository.ipynb`
 - `painel_dataset_piaui.pbix`: Arquivo do painel de dados do Piauí.
 - `requirements.txt`: Lista de dependências do Python.
-- `src/`: Contém scripts Python.
-  - `__init__.py`
-  - `database_manager.py`
-  - `local_directory.py`
-  - `main.py`
-  - `remote_directory.py`
-  - `sidra.py`
-  - `sidra_extraction.py`
+  - `__init__.py`: Inicializa o pacote src.
+  - `database_manager.py`: Gerencia a conexão e operações com o banco de dados. **(Em desenvolvimento)**
+  - `local_directory.py`: Gerencia operações de diretórios locais. **(Pronto)**
+  - `main.py`: Script principal que integra todas as funcionalidades. **(Em desenvolvimento)**
+  - `remote_directory.py`: Gerencia operações de diretórios remotos. **(Pronto)**
+  - `sidra.py`: Funções específicas para interagir com a API do SIDRA. **(Pronto)**
+  - `sidra_extraction.py`: Realiza a extração dos dados do SIDRA. **(Pronto)**
+  - `airflow_dag.py`: DAG do Airflow para orquestrar as tarefas de extração e processamento. **(Ignorado)**
+
 
 ## Instalação
 
 ### Requisitos
-- Python 3.x
+- Python 3.10
 - Jupyter Notebook
 - Docker
 - Bibliotecas necessárias (listadas no `requirements.txt`)
@@ -44,96 +46,75 @@ Alexandre Barros
 ### Passos para Instalação
 Clone o repositório e instale as dependências:
 
-\`\`\`bash
+```bash
 git clone https://github.com/alexand7e/Dataset-PI.git
 cd Dataset-PI
 pip install -r requirements.txt
-\`\`\`
+```
 
 Para utilizar o Docker, execute:
 
-\`\`\`bash
+```bash
 docker-compose up
-\`\`\`
+```
 
 ## Exemplo de Uso
 
 ### Script Python
 
-\`\`\`python
+```Python
 # exemplo_script.py
-import pandas as pd
-
-def processar_dados(file_path):
-    df = pd.read_csv(file_path)
-    # Realiza processamento dos dados
-    return df
+from main import Main
 
 if __name__ == "__main__":
-    df = processar_dados('data/exemplo.csv')
-    print(df.head())
-\`\`\`
+    # Configurações iniciais
+    list_of_tables = [109, 4090]  # Exemplo de tabelas
+    create_remote_directory = True
+    conecting_db = False
 
-### Notebook Jupyter
+    # Inicializa a classe principal e executa o processamento
+    main_process = Main(list_of_tables, create_remote_directory, conecting_db)
+    # main_process.main()
+    main_process.process_data()
+```
 
-Um exemplo de notebook Jupyter está disponível em `notebooks/Sidra-Get_Data-Suporte.ipynb`. Este notebook demonstra como carregar, processar e visualizar dados:
+### Configuração do Arquivo .env
 
-\`\`\`python
-# Sidra-Get_Data-Suporte.ipynb
+Exemplo de um arquivo .env:
 
-import pandas as pd
-import matplotlib.pyplot as plt
+```bash
+# Credenciais do banco de dados
+DB_HOST=localhost
+DB_USER=seu_usuario
+DB_PASSWORD=sua_senha
+DB_NAME=nome_do_banco
 
-# Carregar dados
-df = pd.read_excel('../data/silver/Tabela 109.xlsx')
+# Pode configurar as credenciais da API google
+API_KEY=sua_api_key
 
-# Processar dados
-df_processed = df[df['coluna'] > 0]
-
-# Visualizar dados
-plt.plot(df_processed['coluna'])
-plt.show()
-\`\`\`
-
-### Estrutura de Pastas e Arquivos
-
-1. **scripts/**: Contém scripts Python.
-   - exemplo_script.py
-2. **notebooks/**: Contém notebooks Jupyter.
-   - Sidra-Get_Data-Suporte.ipynb
-   - Sidra-Set_repository.ipynb
-3. **data/**: Contém exemplos de dados.
-   - __data__info.json
-   - credentials.json
-   - preset-tables.json
-   - silver/Tabela 109.xlsx
-   - template.xlsx
-4. **docs/**: Contém a documentação detalhada.
-   - overview.md
-   - installation.md
-   - scripts/
-     - exemplo_script.md
+```
 
 ### .gitignore
 
 Atualize o `.gitignore` para incluir itens específicos de Python e Jupyter:
 
-\`\`\`
+```
 # Arquivos temporários
 *.tmp
 *.log
 
 # Dados
-data/*.csv
-data/*.xlsx
+data/bronze
+data/silver
+data/gold
 
 # Arquivos Python
-__pycache__/
+src/*
 *.pyc
 
 # Arquivos Jupyter
 .ipynb_checkpoints
-\`\`\`
+```
 
 ### Passos Finais
 
@@ -143,8 +124,8 @@ __pycache__/
 4. **Adicione exemplos de dados na pasta `data/`.**
 5. **Comite e envie suas mudanças para o GitHub.**
 
-\`\`\`bash
+```bash
 git add .
 git commit -m "Organiza repositório, adiciona documentação e exemplos de uso"
 git push origin main
-\`\`\`
+```
