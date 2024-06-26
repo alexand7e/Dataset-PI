@@ -78,6 +78,25 @@ if __name__ == "__main__":
     main_process.process_data()
 ```
 
+### Etapas para habilidar o uso das APIs da Google
+
+
+#### No [Google Developers Console](https://console.developers.google.com/), clique em "Create Project", preencha os campos e crie o projeto.
+
+Habilitar API: Clique em "Enable APIs and Services", procure por "Google Sheets API", selecione e habilite-a.
+
+#### Criar Credenciais:
+
+Clique em "Create Credentials".
+Selecione "Google Sheets API", "Application Data", e "No, I’m not using them".
+Preencha "Service account name" e "Service account ID" e crie a conta.
+Conceder Acesso: Escolha um papel (ex: "Editor"), continue e finalize.
+
+#### Criar Chave: Adicione uma nova chave, selecione o tipo "JSON", crie e baixe o arquivo de chave, mantendo-o seguro.
+
+#### Renomeie o arquivo para credentials.json e insira-o na pasta data.
+
+
 ### Configuração do Arquivo .env
 
 Exemplo de um arquivo .env:
