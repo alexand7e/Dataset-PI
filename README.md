@@ -135,16 +135,3 @@ src/*
 .ipynb_checkpoints
 ```
 
-### Passos Finais
-
-1. **Preencha os arquivos README.md e a documentação detalhada conforme o modelo acima.**
-2. **Organize seus scripts na pasta `scripts/` com subpastas se necessário.**
-3. **Adicione notebooks na pasta `notebooks/`.**
-4. **Adicione exemplos de dados na pasta `data/`.**
-5. **Comite e envie suas mudanças para o GitHub.**
-
-```bash
-git add .
-git commit -m "Organiza repositório, adiciona documentação e exemplos de uso"
-git push origin main
-```
