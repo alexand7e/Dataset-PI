@@ -2,19 +2,17 @@
 import os
 import sys
 
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from time import sleep, time
 from typing import List, Tuple
 
 # Local application/library specific imports
-from src.local_directory import DirectoryManager
-from src.remote_directory import GoogleDriveManager
-from src.sidra_extraction import SidraMetadataExecute
-from src.database_manager import PostgreSQL
+from src.db.local_directory import DirectoryManager
+from src.db.remote_directory import GoogleDriveManager
+from src.main.setup import SidraMetadataExecute
+from src.db.database_manager import PostgreSQL
 
 import logging
-import pandas as pd
 from typing import List, Tuple, Optional
 
 class Main:
@@ -46,6 +44,7 @@ class Main:
         self.setup_google_drive(create_remote_directory)
         self.setup_database(conecting_db)
 
+        self.conecting_db = conecting_db
         self.list_of_tables = list_of_tables
         self.execution_interval = 1
         logging.basicConfig(level=logging.INFO)
@@ -58,7 +57,7 @@ class Main:
         3. Aplicação do template e processamento final (gold).
         """
         sidra_executor = SidraMetadataExecute(self.list_of_tables)
-        sidra_executor.batch_info()
+        # sidra_executor.batch_info()
         sidra_executor.batch_extraction()
         sidra_executor.processed_template()
 
@@ -75,8 +74,10 @@ class Main:
         df['assunto'] = "Padrão"
         df_final = df[['tabela', 'filename', 'full_filename', 'assunto']]
 
-        df_final['gdrive_id'], df_final['url'] = zip(*df_final.apply(self.upload_to_drive, axis=1))
-        df_final['download'] = df_final['gdrive_id'].apply(lambda x: f"https://drive.google.com/uc?export=download&id={x}")
+
+        if self.conecting_db:
+            df_final['gdrive_id'], df_final['url'] = zip(*df_final.apply(self.upload_to_drive, axis=1))
+            df_final['download'] = df_final['gdrive_id'].apply(lambda x: f"https://drive.google.com/uc?export=download&id={x}")
 
     def upload_to_drive(self, row) -> Tuple[str, str]:
         """
@@ -106,8 +107,8 @@ class Main:
         Parâmetros:
             create_remote_directory (bool): Define se um diretório remoto deve ser criado no Google Drive.
         """
-        self.gd = GoogleDriveManager(os.path.join(self.output_dirs.get('geral'), 'credentials.json'))
         if create_remote_directory:
+            self.gd = GoogleDriveManager(os.path.join(self.output_dirs.get('geral'), 'credentials.json'))
             self.main_folder_id, self.url_banco = self.gd.create_folder('Teste de Banco', make_public=True)
             print(f'banco de dados criado em {self.url_banco}')
 
@@ -121,77 +122,4 @@ class Main:
         if conecting_db:
             self.db = PostgreSQL(schema='datasetpi')
 
-if __name__ == "__main__":
-    # Configurações iniciais
-    list_of_tables = [109, 4090]  # Exemplo de tabelas
-    create_remote_directory = True
-    conecting_db = False
 
-    # Inicializa a classe principal e executa o processamento
-    main_process = Main(list_of_tables, create_remote_directory, conecting_db)
-    # main_process.main()
-    main_process.process_data()
-
-
-        
-
-    # def configure_schemas_files(self):
-    #     schemas = ['trabalho', 'domicilios', 'mercado_de_trabalho', 'rendimento', 'populacao_desocupada', 'pessoal_ocupado', 'rendimento_de_todas_as_fontes', 'características_do_trabalho_e_apoio_social']
-
-    #     for schema in schemas:
-    #         db = PostgreSQL(schema=schema)
-    #         df = db.read_all_tables()
-    #         # Define o caminho onde o DataFrame será salvo
-    #         file_path = os.path.join(self.output_dirs.get('geral'), f'{schema}_data.csv')
-    #         # Salva o DataFrame em um arquivo CSV
-    #         df.to_csv(file_path, index=False)
-    #         print(f'DataFrame do esquema {schema} salvo em {file_path}')
- 
-    # def batch_extraction(self):
-
-    #     df_tables = pd.read_excel(f"{self.output_dirs['bronze']}/tables_adjusted.xlsx", dtype=str)
-    #     df_variables = pd.read_excel(f"{self.output_dirs['bronze']}/variables_adjusted.xlsx", dtype=str)
-    #     df_categories = pd.read_excel(f"{self.output_dirs['bronze']}/categories_adjusted.xlsx", dtype=str)
-
-    #     for idx, row in df_tables.iterrows():
-    #         table_number = row["id"]
-    #         variaveis_filtradas = df_variables[df_variables["Tabela"] == table_number]
-
-    #         pages_data: List[pd.DataFrame] = []
-    #         pages_names: List[str] = []
-
-    #         unique_categories = df_categories[df_categories["Tabela"] == table_number]['classificacao_id'].unique().tolist()
-    #         unique_categories = [f'c{category}' for category in unique_categories if category is not None and category != '']
-    #         categories_str = '/all/'.join(unique_categories) + '/all/' if unique_categories else ''
-    #         assunto = self.format_string(row['assunto'])
-
-    #         for _, row_var in variaveis_filtradas.iterrows():
-    #             try:
-    #                 self.sidra_api.build_url(
-    #                     tabela=table_number,
-    #                     variavel=row_var['id'],
-    #                     classificacao=categories_str,
-    #                     nivel_territorial=row["Nível Territorial"],
-    #                     periodo={'Frequência': row["Frequência"], 
-    #                              'Inicio': row["Data Inicial"], 
-    #                              'Final': row["Data Final"]}
-    #                 )
-
-    #                 df = self.sidra_api.fetch_data()
-    #                 self.process_dataframe(df, table_number, row_var, assunto)
-
-    #                 pages_data.append(df)
-    #                 pages_names.append(f'Variável {row_var["id"]}')
-
-    #                 sleep(self.execution_interval)
-
-    #             except Exception as e:
-    #                 print(f"Um erro ocorreu na tabela {table_number}, variável {row_var['id']}: {e}")
-    #                 sleep(10)
-
-    #         if pages_data:
-    #             with pd.ExcelWriter(f'{self.output_dirs.get("silver")}/Tabela {table_number}.xlsx', engine='openpyxl') as writer:
-    #                 for df, nome_aba in zip(pages_data, pages_names):
-    #                     df.to_excel(writer, sheet_name=nome_aba, index=False)
-    #         else:
-    #             print(f"Nenhum dado para escrever em Excel: {table_number}")

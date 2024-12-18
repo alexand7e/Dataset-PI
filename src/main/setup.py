@@ -3,26 +3,34 @@ import logging
 import os
 import re
 import sys
-
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-
 import unicodedata
 from time import sleep, time
 from typing import List, Tuple, Optional
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 # Third-party imports
 import pandas as pd
 from tqdm import tqdm
 
 # Local application/library specific imports
-from src.sidra import SidraAPI, SidraManager
-from src.database_manager import PostgreSQL
-from src.local_directory import DirectoryManager
+from src.services.sidra_api import SidraAPI
+from src.services.ibge_api import SidraManager
+from src.db.database_manager import PostgreSQL
+from src.db.local_directory import DirectoryManager
 
-def format_string(input_string):
+def format_string(input_string: str) -> str:
+    """
+    Formata uma string, removendo acentos, caracteres especiais e substituindo espaços por underscores.
+
+    Parâmetros:
+        input_string (str): String a ser formatada.
+
+    Retorna:
+        str: String formatada.
+    """
     normalized_string = unicodedata.normalize('NFKD', input_string)
     cleaned_string = ''.join(char for char in normalized_string if not unicodedata.combining(char))
-    
     cleaned_string = re.sub(r'[^a-zA-Z0-9\s]', '', cleaned_string)
     cleaned_string = cleaned_string.lower()
     cleaned_string = cleaned_string.replace(' ', '_').replace('-', '_')
@@ -30,35 +38,36 @@ def format_string(input_string):
 
 class SidraMetadataExecute:
     """
-    Classe para gerenciar a extração e processamento de metadados de tabelas do SIDRA (Sistema IBGE de Recuperação Automática).
+    Classe para gerenciar a extração e processamento de metadados de tabelas do SIDRA.
 
     Atributos:
-        list_of_tables (list): Lista opcional de IDs de tabelas a serem processadas.
+        list_of_tables (Optional[List[int]]): Lista de IDs de tabelas a serem processadas.
         output_dir (str): Diretório onde os arquivos de saída serão salvos.
         processing_db (bool): Indica se os dados processados devem ser salvos em um banco de dados PostgreSQL.
-        list_df_tables (list): Lista de DataFrames de tabelas processadas.
-        list_df_variables (list): Lista de DataFrames de variáveis processadas.
-        list_df_categories (list): Lista de DataFrames de categorias processadas.
+        list_df_tables (List[pd.DataFrame]): Lista de DataFrames de tabelas processadas.
+        list_df_variables (List[pd.DataFrame]): Lista de DataFrames de variáveis processadas.
+        list_df_categories (List[pd.DataFrame]): Lista de DataFrames de categorias processadas.
         sidra_service (SidraManager): Serviço para gerenciar operações de metadados SIDRA.
         sidra_api (SidraAPI): API para interagir com o SIDRA.
         execution_interval (int): Intervalo de execução entre as tentativas de requisição.
         directory_manager (DirectoryManager): Gerenciador de diretórios.
         output_dirs (dict): Dicionário com os diretórios de saída.
-        db (PostgreSQL): Instância do banco de dados PostgreSQL.
+        db (Optional[PostgreSQL]): Instância do banco de dados PostgreSQL (se habilitado).
 
     Métodos:
         __init__: Inicializa a classe com diretórios de saída, serviços SIDRA e configurações de banco de dados, se necessário.
         process_table_metadata: Processa metadados para uma tabela específica com tentativas de repetição em caso de falhas.
-        process_data: Processa dados de tabela, variáveis e categorias e armazena em listas internas.
+        _process_data: Processa dados de tabela, variáveis e categorias e armazena em listas internas.
         batch_info: Processa uma lista de tabelas e gera arquivos Excel com os metadados.
-        generate_excel_files: Salva um DataFrame em um arquivo Excel no diretório especificado.
-        load_data: Carrega dados de metadados de tabelas, variáveis e categorias de arquivos Excel.
-        build_and_fetch_data: Constrói uma URL para consulta e busca dados da API do SIDRA.
-        process_and_save_data: Processa e salva dados em arquivos Excel para cada tabela.
+        _generate_excel_files: Salva um DataFrame em um arquivo Excel no diretório especificado.
+        _load_data: Carrega dados de metadados de tabelas, variáveis e categorias de arquivos Excel.
+        _build_and_fetch_data: Constrói uma URL para consulta e busca dados da API do SIDRA.
+        _process_and_save_data: Processa e salva dados em arquivos Excel para cada tabela.
         batch_extraction: Executa a extração em lote de dados usando métodos definidos na classe.
+        processed_template: Processa arquivos de dados e aplica um template para cada tabela.
     """
-    def __init__(self, list_of_tables: Optional[List[int]] = None, output_dir: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data"), processing_db: bool = False) -> None:
 
+    def __init__(self, list_of_tables: Optional[List[int]] = None, output_dir: str = os.path.join(os.path.dirname(__file__), "..", "..", "data"), processing_db: bool = False) -> None:
         """
         Inicializa a classe com diretórios de saída, serviços SIDRA e configurações de banco de dados, se necessário.
 
@@ -68,23 +77,27 @@ class SidraMetadataExecute:
             processing_db (bool): Define se os resultados devem ser armazenados em um banco de dados.
         """
         self.list_of_tables = list_of_tables
-        logging.basicConfig(level=logging.INFO)
+        self.output_dir = output_dir
+        self.processing_db = processing_db
 
+        logging.basicConfig(level=logging.INFO)
+        logging.info(f"Objeto SidraMetadataExecute criado \nDiretórios: {self.output_dir}")
+
+        # Inicializa listas para armazenar os dados processados
         self.list_df_tables = []
         self.list_df_variables = []
         self.list_df_categories = []
 
-        self.output_dir = output_dir
-        
+        # Inicializa serviços e gerenciadores
         self.sidra_service = SidraManager()
         self.sidra_api = SidraAPI()
         self.execution_interval = 5
 
         self.directory_manager = DirectoryManager()
         self.output_dirs = self.directory_manager._create_directories()
-        logging.info(f"Objeto criado \nDiretorios: {self.output_dir}")
-                     
-        if processing_db:
+
+        # Configura banco de dados se necessário
+        if self.processing_db:
             self.db = PostgreSQL(schema='datasetpi')
 
     def process_table_metadata(self, table: int, max_retries: int = 2) -> Tuple[Optional[pd.DataFrame], int]:
@@ -112,7 +125,7 @@ class SidraMetadataExecute:
             except Exception as e:
                 logging.error(f"Erro ao processar os dados de {table}: {e}")
                 retry_count += 1
-            sleep(self.execution_interval)  # Espera antes de tentar novamente
+            sleep(self.execution_interval)
         return None, retry_count 
 
     def _process_data(self, table: int, data: dict) -> pd.DataFrame:
@@ -135,17 +148,6 @@ class SidraMetadataExecute:
         self.list_df_categories.append(df_categories)
 
         return df_table_info
-    
-        # if False:  # Verifica se deve criar tabelas no banco de dados
-        #     self.db.set_schema('datasetpi')
-        #     self.db.create_table(table_name='sidra_tabelas', df=df_tables)
-        #     self.db.create_table(table_name='sidra_variaveis', df=df_variables)
-        #     self.db.create_table(table_name='sidra_categorias', df=df_categories)
-        #     self.create_remote_directory = False  # Evita a recriação das tabelas
-
-        #     self.db.insert_into_table(table_name='sidra_tabelas', df=df_tables)
-        #     self.db.insert_into_table(table_name='sidra_variaveis', df=df_variables)
-        #     self.db.insert_into_table(table_name='sidra_categorias', df=df_categories)
 
     def batch_info(self, max_retries: int = 3) -> Tuple[List[dict], dict]:
         """
@@ -173,9 +175,9 @@ class SidraMetadataExecute:
         final_df_categories = pd.concat(self.list_df_categories, ignore_index=True)
 
         # Geração de arquivos consolidados
-        self._generate_excel_files(final_df_tables, "_tables_adjusted_.xlsx")
-        self._generate_excel_files(final_df_variables, "_variables_adjusted_.xlsx")
-        self._generate_excel_files(final_df_categories, "_categories_adjusted_.xlsx")
+        self._generate_excel_files(final_df_tables, "_tables_adjusted_.xlsx", pasta="bronze")
+        self._generate_excel_files(final_df_variables, "_variables_adjusted_.xlsx", pasta="bronze")
+        self._generate_excel_files(final_df_categories, "_categories_adjusted_.xlsx", pasta="bronze")
 
         return metatable, failed_requests
 
@@ -266,21 +268,16 @@ class SidraMetadataExecute:
             for _, row_var in variaveis_filtradas.iterrows():
                 try:
                     df = self._build_and_fetch_data(table_number, row, row_var, categories_str)
-                    # self.process_dataframe(df, table_number, row_var, assunto)
-
                     pages_data.append(df)
                     pages_names.append(f'Variável {row_var["id"]}')
-
                     sleep(self.execution_interval)
-
                 except Exception as e:
                     logging.error(f"Um erro ocorreu na tabela {table_number}, variável {row_var['id']}: {e}")
                     sleep(10)
 
             self._process_and_save_data(pages_data, pages_names, table_number)
 
-
-    def processed_template(self):
+    def processed_template(self) -> None:
         """
         Processa arquivos de dados e aplica um template para cada tabela.
 
@@ -288,10 +285,10 @@ class SidraMetadataExecute:
         1. Inicializa um objeto `DirectoryManager` para gerenciar os diretórios de origem e destino.
         2. Lista todos os arquivos no diretório de origem e extrai os números das tabelas dos nomes dos arquivos.
         3. Para cada arquivo de tabela:
-        a. Lê o arquivo Excel.
-        b. Verifica se o arquivo de saída correspondente já existe.
-        c. Aplica o template e processa o arquivo.
-        d. Registra a conclusão do processamento.
+            a. Lê o arquivo Excel.
+            b. Verifica se o arquivo de saída correspondente já existe.
+            c. Aplica o template e processa o arquivo.
+            d. Registra a conclusão do processamento.
 
         Exceções são tratadas e registradas em logs.
         """
@@ -319,72 +316,4 @@ class SidraMetadataExecute:
                     logging.error(f"Erro ao processar a tabela {table_number}: {e}")
 
         except Exception as e:
-            logging.error(f"Failed to process data files: {e}")
-
-
-    # def batch_info(self, max_retries=3) -> tuple:
-
-    #     metatable = []
-    #     failed_requests = {}
-    #     create = True
-
-    #     for table in tqdm(self.list_of_tables, total=len(self.list_of_tables), unit="Tables"):
-    #         retry_count = 0
-
-    #         while retry_count <= max_retries:
-    #             start_time = time()  # Tempo de início do loop
-
-    #             try:
-    #                 data = self.sidra_service.sidra_get_metadata(table)
-    #                 sleep(self.execution_interval)
-                    
-    #                 if data:
-    #                     df_tables, df_table_info = self.sidra_service.sidra_process_table(data)
-    #                     df_variables = self.sidra_service.sidra_process_variables(data, table)
-    #                     df_categories = self.sidra_service.sidra_process_categories(data, table)
-
-    #                     self.list_df_tables.append(df_tables)
-    #                     self.list_df_variables.append(df_variables)
-    #                     self.list_df_categories.append(df_categories)
-
-    #                     metatable.append({"table": table, "data": df_table_info})
-    #                     df_table_info.to_excel(f"{self.output_dirs['bronze']}/sidra_info_{table}.xlsx", index=False)
-
-    #                     if create:
-    #                         self.db.set_schema('datasetpi')
-    #                         self.db.create_table(table_name='sidra_tabelas', df=df_tables)
-    #                         self.db.create_table(table_name='sidra_variaveis', df=df_variables)
-    #                         self.db.create_table(table_name='sidra_categorias', df=df_categories)
-    #                     create = False
-
-    #                     self.db.insert_into_table(table_name='sidra_tabelas', df=df_tables)
-    #                     self.db.insert_into_table(table_name='sidra_variaveis', df=df_variables)
-    #                     self.db.insert_into_table(table_name='sidra_categorias', df=df_categories)
-
-    #                     break  # Sai do loop de retry ao sucesso
-    #                 else:
-    #                     logging.error(f"Falha ao obter os dados de {table}")
-    #                     retry_count += 1
-    #             except Exception as e:
-    #                 logging.error(f"Erro ao processar os dados de {table}: {e}")
-    #                 retry_count += 1
-
-    #             elapsed_time = time() - start_time
-    #             if elapsed_time > 120:  # Verifica se o tempo excedeu 2 minutos
-    #                 logging.error(f"Tempo limite excedido para a tabela {table}")
-    #                 break
-
-    #         if retry_count > max_retries:
-    #             logging.error(f"Todas as tentativas falharam para a tabela {table}")
-    #             failed_requests[table] = retry_count
-
-    #     # Concatenação e gravação dos dataframes
-    #     final_df_tables = pd.concat(self.list_df_tables, ignore_index=True)
-    #     final_df_variables = pd.concat(self.list_df_variables, ignore_index=True)
-    #     final_df_categories = pd.concat(self.list_df_categories, ignore_index=True)
-
-    #     final_df_tables.to_excel(f"{self.output_dirs['bronze']}/tables_adjusted.xlsx", index=False)
-    #     final_df_variables.to_excel(f"{self.output_dirs['bronze']}/variables_adjusted.xlsx", index=False)
-    #     final_df_categories.to_excel(f"{self.output_dirs['bronze']}/categories_adjusted.xlsx", index=False)
-
-    #     return metatable, failed_requests
+            logging.error(f"Erro ao processar os arquivos de dados: {e}")

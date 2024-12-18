@@ -6,6 +6,7 @@ dockerfile
 docker-compose.yaml
 
 # Dados sensíveis e outros arquivos na pasta data
+data/__data__info.json
 data/credentials.json
 data/image
 data/gold/*
@@ -14,7 +15,7 @@ data/bronze/*
 data/bi
 
 # Cache do Python
-src/__pycache__/
+**/__pycache__/
 
 # Arquivos de configuração e ambiente
 config
@@ -22,5 +23,5 @@ config
 .venv
 
 # Arquivos específicos do projeto
-README.pdf
+*.pdf
 *.pbix

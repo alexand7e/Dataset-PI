@@ -1,9 +1,9 @@
 import os
 import shutil
 import pandas as pd
+from copy import copy
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
-from copy import copy
 
 class DirectoryManager:
     """Gerencia diretórios locais para organizar e processar arquivos.
@@ -23,7 +23,7 @@ class DirectoryManager:
         destiny_directory (str): O diretório de destino onde os arquivos organizados serão armazenados.
     """
     def __init__(self, 
-                 base_directory: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data"), 
+                 base_directory: str = os.path.join(os.path.dirname(__file__), "..", "..", "data"), 
                  origin_directory: str = None, 
                  destiny_directory: str = None):
         
